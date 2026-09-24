@@ -5,8 +5,8 @@ measuring vector index builds, search latency, and recall.
 
 Downloading, native BCP conversion/loading, index-build measurement, and search
 latency/recall measurement are implemented. Offline tests do not establish
-successful live execution. Build and search still require validation on the
-target server before their results can be used.
+successful live execution. The 10M workflow has also been validated on a local
+SQL Server build; see Live Validation below for its scope and limitations.
 
 Each stage has its own Python file. [download.py](download.py) owns downloading,
 its command-line options, and its error handling. [benchmark.py](benchmark.py)
@@ -270,7 +270,8 @@ It copies the float32 payload bytes unchanged. Local tests check the record
 layout, values, IDs, ranks, and command sequence. The clearer prefix expression
 `struct.pack("<HBBI2x", vector_bytes + 8, 0xA9, 1, dimensions)` preserves the
 observed bytes. This refactored load path still needs live validation of the SQL
-scripts and native imports on the intended build. No vector index is created.
+scripts and native imports on each new target build; a local 10M run is recorded
+under Live Validation below. No vector index is created by loading.
 Row-count checks are not value readback: there is no mandatory full-corpus export.
 Any sampled value validation must be run separately and report its sample size.
 
@@ -350,7 +351,9 @@ benchmark's statement-completed XEvents.
 `SYSUTCDATETIME()` is a wall clock, not monotonic; nanosecond arithmetic does not
 imply nanosecond clock accuracy. Clock adjustments can affect the duration; a
 negative duration is rejected. Timer placement is checked offline, but execution
-and clock behavior on the target build still require live validation.
+and clock behavior must also be checked on the target build. See Live Validation
+for the completed local 10M run; this does not establish clock accuracy on other
+environments.
 
 ### Checks And Results
 
@@ -572,6 +575,26 @@ failed and retains its JSON and evidence without replaying any search; a partial
 CSV may remain and must not be treated as complete. The existing JSON, settings,
 and XEvent evidence remain unchanged. CSV export uses Python's standard library.
 
+## Live Validation
+
+On 2026-09-24, a local SQL Server 18.0.251.0 run completed the 10M load, build,
+and search stages using the publisher's matching 10M ground truth, not a
+recomputed reference. The run used 10,000,000 documents, 1,280-dimensional
+float32 vectors, Euclidean distance, build MAXDOP=16, and search MAXDOP=1.
+
+Search used the first 1,000 query IDs, k=10, one discarded warm-up pass, and ten
+measured repetitions. Validation checked 10,000 individual result records and
+10,000 uniquely attributed statement-completed timing events. Read-bearing
+results were retained. This validates that run's execution and evidence, not
+all dataset sizes, environments, or full-corpus value readback. It is not an
+Azure SQL Database performance claim.
+
+The corpus download for this run used a separate local parallel-transfer helper
+with explicitly authorized range retries. That helper is not included in this
+sample; the customer downloader remains sequential, with no automatic retries.
+No SQL or measured work was automatically replayed. Downloaded datasets, raw
+evidence, and generated CSVs remain excluded from Git.
+
 ## Local Tests
 
 From the repository root:
@@ -617,10 +640,8 @@ filtering, missing/duplicate/lost/truncated evidence, exact attribution, microse
 units, short/empty recall, percentiles, cache counters, result-set draining,
 evidence-before-stop ordering, credential handling, and one warm-up followed by
 ten passes using mocked connections. Install the search requirements before
-running the full suite. The approved 10-query live attempt on 2026-09-24 reached
-preflight on build 18.0.251.0 but stopped because the document table had only its
-primary-key index, not the required vector index. No warm-up, searches, or XEvent
-collection were started. The failure is retained under
-`data/search-runs/1M-small-20260924-135124`. Workload SQL syntax, actual event
-delivery, and a successful small end-to-end result still require validation after
-the index and selected GT data are available, before scaling.
+running the full suite. An early live attempt stopped before searches because
+the required vector index was absent. Subsequent local tests exercised existing
+10K indexes and the 10M run described above. Offline tests remain separate from
+that live evidence; validate new target builds with a small authorized run before
+scaling.
