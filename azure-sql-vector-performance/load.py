@@ -98,7 +98,7 @@ def write_vector_chunk(source, output, chunk_start, count, dimensions):
         output.write(vector)
 
 
-def write_groundtruth_chunk(neighbors, distances, output, chunk_start, count, depth, document_count):
+def groundtruth_rows(neighbors, distances, chunk_start, count, depth, document_count):
     for row_offset in range(count):
         neighbor_bytes = neighbors.read(depth * 4)
         distance_bytes = distances.read(depth * 4)
@@ -118,6 +118,12 @@ def write_groundtruth_chunk(neighbors, distances, output, chunk_start, count, de
         if not all(math.isfinite(value) and value >= 0
                    for (value,) in struct.iter_unpack("<f", distance_bytes)):
             raise ValueError(f"Invalid ground-truth distance for query {query_id}.")
+        yield query_id, neighbor_bytes, distance_bytes
+
+
+def write_groundtruth_chunk(neighbors, distances, output, chunk_start, count, depth, document_count):
+    for query_id, neighbor_bytes, distance_bytes in groundtruth_rows(
+            neighbors, distances, chunk_start, count, depth, document_count):
         for rank_offset in range(depth):
             offset = rank_offset * 4
             output.write(struct.pack("<ii", query_id, rank_offset + 1))
@@ -133,9 +139,16 @@ def load_data(size, data_dir, server, database, username=None, wsl=None, bcp=Non
         raise ValueError("Choose either a SQL username or a trusted connection, not both.")
     dataset = Path(data_dir).resolve() / f"yfcc-images-{size}"
     output_dir = dataset / "bcp"
-    if output_dir.exists():
+    if output_dir.exists() and (not output_dir.is_dir() or any(output_dir.iterdir())):
         raise FileExistsError(f"Inspect existing staging files before loading: {output_dir}")
     shapes = validate_sources(dataset, size)
+    query_count, depth = shapes["groundtruth.bin"]
+    print("Validating all ground-truth IDs, distances, and unique neighbors before loading.", flush=True)
+    with (dataset / "groundtruth.bin").open("rb") as neighbors, (dataset / "groundtruth.bin").open("rb") as distances:
+        neighbors.seek(8)
+        distances.seek(8 + query_count * depth * 4)
+        for _ in groundtruth_rows(neighbors, distances, 0, query_count, depth, SIZES[size]):
+            pass
     bcp_command = tool_command("bcp", bcp, wsl)
     sqlcmd_command = tool_command("sqlcmd", sqlcmd, wsl)
     connection = ["-S", server, "-d", database]
@@ -152,7 +165,7 @@ def load_data(size, data_dir, server, database, username=None, wsl=None, bcp=Non
     create_script = tool_path(ROOT / "scripts/setup/create-table.sql", wsl)
     verify_script = tool_path(ROOT / "scripts/setup/load-data.sql", wsl)
     staging_path = tool_path(output_dir, wsl)
-    output_dir.mkdir(exist_ok=False)
+    output_dir.mkdir(exist_ok=True)
     if wsl:
         for option, path in (("-d", staging_path), ("-r", create_script), ("-r", verify_script)):
             subprocess.run(["wsl.exe", "--distribution", wsl, "--exec", "test", option, path],

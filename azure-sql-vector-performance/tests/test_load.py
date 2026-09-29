@@ -254,15 +254,45 @@ class LoadTests(unittest.TestCase):
         self.assertEqual(len(self.imports), 1)
         self.assertEqual([path.name for path in self.output_dir.iterdir()], ["documents-0000000002.bcp.part"])
 
-    def test_duplicate_gt_neighbor_retains_partial_and_stops(self):
+    def test_duplicate_gt_neighbor_fails_before_setup_or_staging(self):
         path = self.dataset / "groundtruth.bin"
         payload = bytearray(path.read_bytes())
         struct.pack_into("<2i", payload, 8, 1, 1)
         path.write_bytes(payload)
         with self.assertRaisesRegex(ValueError, "Duplicate"):
             load.load_data(**self.args)
-        self.assertEqual(len(self.imports), 5)
-        self.assertEqual([path.name for path in self.output_dir.iterdir()], ["groundtruth-0000000000.bcp.part"])
+        self.run.assert_not_called()
+        self.assertFalse(self.output_dir.exists())
+
+    def test_bad_gt_values_even_at_last_query_fail_before_any_tools(self):
+        path = self.dataset / "groundtruth.bin"
+        original = path.read_bytes()
+        for offset, format, value in ((8, "<i", 8572694), (8 + 5 * 4, "<i", -1),
+                                      (8 + 6 * 4 + 5 * 4, "<f", float("nan"))):
+            with self.subTest(value=value):
+                payload = bytearray(original)
+                struct.pack_into(format, payload, offset, value)
+                path.write_bytes(payload)
+                with self.assertRaises(ValueError):
+                    load.load_data(**self.args)
+                self.run.assert_not_called()
+                self.assertFalse(self.output_dir.exists())
+
+    def test_setup_failure_allows_corrected_attempt_with_empty_staging(self):
+        self.fail_setup = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            load.load_data(**self.args)
+        self.assertFalse(list(self.output_dir.iterdir()))
+        self.fail_setup = False
+        load.load_data(**self.args)
+        self.assertEqual(len(self.imports), 7)
+
+    def test_empty_staging_does_not_bypass_sql_setup_refusal(self):
+        self.output_dir.mkdir()
+        self.fail_setup = True
+        with self.assertRaises(subprocess.CalledProcessError):
+            load.load_data(**self.args)
+        self.assertFalse(self.imports)
 
     def test_native_import_failure_stops_without_retry_or_cleanup(self):
         self.fail_import = 2
