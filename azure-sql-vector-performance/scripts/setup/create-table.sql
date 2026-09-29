@@ -1,7 +1,8 @@
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
-IF DB_NAME() <> N'$(ExpectedDatabase)' OR DB_ID() <= 4
+IF DB_NAME() <> N'$(ExpectedDatabase)'
+   OR DB_NAME() IN (N'master', N'tempdb', N'model', N'msdb')
     THROW 50000, 'Connect to the intended existing user database.', 1;
 
 SELECT @@VERSION AS server_build, @@SERVERNAME AS server_name,

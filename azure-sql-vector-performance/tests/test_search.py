@@ -134,7 +134,7 @@ class WorkflowTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name).resolve() / "repetition"
         self.connection = object()
-        self.settings = dict(xe_scope="SERVER", size="1M", k=10, query_count=2,
+        self.settings = dict(xe_scope="SERVER", size="10M", k=10, query_count=2,
                              session_id=51, requires_page_server_reads=False)
         self.columns = [{"object_name": name, "name": field, "description": "Elapsed time in microseconds"}
                         for name in search.EVENT_NAMES for field in ("statement", "duration", "collect_statement")]
@@ -258,7 +258,7 @@ class WorkflowTests(unittest.TestCase):
                 search.validate_event_metadata(columns)
 
     def test_workload_pairs_searches_and_saves_rowcounts_immediately(self):
-        sql = search.render_workload("1M", 10, 2, self.run_id)
+        sql = search.render_workload("10M", 10, 2, self.run_id)
         self.assertEqual(sql.count("/*vector-latency:"), 1)
         self.assertEqual(sql.count("WITH (FORCE_ANN_ONLY)"), 2)
         self.assertEqual(sql.count("OPTION (MAXDOP 1);"), 2)
@@ -330,13 +330,13 @@ class RunnerTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         root = Path(self.temporary.name).resolve()
-        dataset = root / "yfcc-images-1M"
+        dataset = root / "yfcc-images-10M"
         dataset.mkdir()
-        self.manifest = dict(dataset="yfcc-images-1M", document_count=1000000, dimensions=1280,
+        self.manifest = dict(dataset="yfcc-images-10M", document_count=10000000, dimensions=1280,
                              metric="euclidean", vector_dtype="float32", ground_truth_k=100, query_count=100000)
         self.manifest_path = dataset / "manifest.json"
         self.manifest_path.write_text(json.dumps(self.manifest))
-        self.args = SimpleNamespace(size="1M", server="localhost,1433", database="Vector Test",
+        self.args = SimpleNamespace(size="10M", server="localhost,1433", database="Vector Test",
                                     expected_engine_version="18.0.251.0", output_dir=root / "attempt",
                                     data_dir=root, k=10, query_count=2, repetitions=10, maxdop=1,
                                     index_name="yfcc_vector_index", dimension=1280, metric="euclidean",
@@ -383,6 +383,19 @@ class RunnerTests(unittest.TestCase):
             with self.assertRaises(FileExistsError):
                 search.run_search(self.args)
             connect.assert_not_called()
+
+    def test_removed_1m_is_rejected_before_manifest_or_connection(self):
+        with patch.object(search, "connect") as connect, patch.object(Path, "read_text") as read:
+            for size in ("1M", "1m"):
+                with self.subTest(size=size):
+                    self.args.size = size
+                    with self.assertRaisesRegex(ValueError, "supported"):
+                        search.run_search(self.args)
+                    with self.assertRaises(ValueError):
+                        search.render_workload(size, 10, 2, uuid.uuid4())
+            connect.assert_not_called()
+            read.assert_not_called()
+        self.assertFalse(self.args.output_dir.exists())
 
     def test_target_observation_is_saved_before_version_mismatch(self):
         self.args.output_dir.mkdir()

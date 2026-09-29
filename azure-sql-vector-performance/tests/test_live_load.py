@@ -24,8 +24,8 @@ class LiveLoadTests(unittest.TestCase):
 
         data_dir = Path(tempfile.mkdtemp(prefix="yfcc-live-load-")).resolve()
         print(f"Live fixture artifacts retained in {data_dir}; no SQL cleanup is performed.", flush=True)
-        with patch.dict(load.SIZES, {"1M": 3}), patch.object(load, "QUERY_COUNT", 2):
-            dataset = data_dir / "yfcc-images-1M"
+        with patch.dict(load.SIZES, {"10M": 3}), patch.object(load, "QUERY_COUNT", 2):
+            dataset = data_dir / "yfcc-images-10M"
             dataset.mkdir()
             documents = [
                 struct.pack("<1280f", *[((index + seed) % 257 - 128) / 16 for index in range(1280)])
@@ -42,7 +42,7 @@ class LiveLoadTests(unittest.TestCase):
             )
 
             load.load_data(
-                size="1M", data_dir=data_dir, server=server, database=database, username=username,
+                size="10M", data_dir=data_dir, server=server, database=database, username=username,
                 bcp=bcp, sqlcmd=sqlcmd, batch_size=1, chunk_rows=2,
                 trust_server_certificate=trust_server_certificate,
             )
@@ -63,11 +63,11 @@ class LiveLoadTests(unittest.TestCase):
                 (1, 1, 1, 0.5), (1, 2, 2, 1.25), (1, 3, 0, 8.0),
             ))
             queries_by_table = {
-                "documents": "SELECT id, embedding FROM dbo.yfcc_1M_documents ORDER BY id",
-                "queries": "SELECT id, embedding FROM dbo.yfcc_1M_queries ORDER BY id",
+                "documents": "SELECT id, embedding FROM dbo.yfcc_10M_documents ORDER BY id",
+                "queries": "SELECT id, embedding FROM dbo.yfcc_10M_queries ORDER BY id",
                 "groundtruth": (
                     "SELECT query_id, rank, neighbor_id, distance "
-                    "FROM dbo.yfcc_1M_groundtruth ORDER BY query_id, rank"
+                    "FROM dbo.yfcc_10M_groundtruth ORDER BY query_id, rank"
                 ),
             }
             for table, query in queries_by_table.items():

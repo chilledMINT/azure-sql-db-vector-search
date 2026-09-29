@@ -11,11 +11,10 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 
-SIZES = {"1M": 1_000_000, "10M": 10_000_000, "100M": 98_735_605}
+SIZES = {"10M": 10_000_000, "100M": 98_735_605}
 BASE_URL = "https://comp21storage.z5.web.core.windows.net/yfcc100m_images/"
 QUERY_FILE = "yfcc100m_query_vecs.fbin"
 FILES = {
-    "1M": ("yfcc100m_vecs_sampled_1m.fbin", "yfcc100m_query_gt100_sampled_1m.bin"),
     "10M": ("yfcc100m_vecs_sampled_10m.fbin", "yfcc100m_query_gt100_sampled_10m.bin"),
     "100M": ("yfcc100m_vecs.fbin", "yfcc100m_query_gt100.bin"),
 }
@@ -26,7 +25,7 @@ DEFAULT_DATA_DIR = Path(__file__).resolve().parent / "data"
 def get_yfcc_urls(size):
     size = size.upper()
     if size not in FILES:
-        raise ValueError("Choose a published YFCC Images size: 1M, 10M, or 100M.")
+        raise ValueError("Choose a supported YFCC Images size: 10M or 100M.")
     base_file, ground_truth_file = FILES[size]
     return {
         "base": urljoin(BASE_URL, base_file),

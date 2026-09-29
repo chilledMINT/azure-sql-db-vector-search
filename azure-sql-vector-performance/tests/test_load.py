@@ -21,10 +21,10 @@ class LoadTests(unittest.TestCase):
         self.root = Path(self.stack.enter_context(tempfile.TemporaryDirectory())).resolve()
         self.stack.enter_context(redirect_stdout(io.StringIO()))
         self.stack.enter_context(patch.object(load.shutil, "which", side_effect=lambda name: name))
-        self.stack.enter_context(patch.object(load, "SIZES", {"1M": 5, "10M": 7, "100M": 9}))
+        self.stack.enter_context(patch.object(load, "SIZES", {"10M": 5, "100M": 9}))
         self.stack.enter_context(patch.object(load, "DIMENSIONS", 3))
         self.stack.enter_context(patch.object(load, "QUERY_COUNT", 3))
-        self.dataset = self.root / "yfcc-images-1M"
+        self.dataset = self.root / "yfcc-images-10M"
         self.dataset.mkdir()
         self.output_dir = self.dataset / "bcp"
         self.documents = [struct.pack("<3f", *values) for values in (
@@ -39,7 +39,7 @@ class LoadTests(unittest.TestCase):
         (self.dataset / "groundtruth.bin").write_bytes(
             struct.pack("<II6i6f", 3, 2, 2, 0, 1, 2, 4, 3, 0.125, 2.5, 0.5, 4.0, 1.0, 8.0)
         )
-        self.args = dict(size="1M", data_dir=self.root, server="localhost,1433",
+        self.args = dict(size="10M", data_dir=self.root, server="localhost,1433",
                          database="Vector Test", username="benchmark_user", batch_size=1, chunk_rows=2)
         self.imports = []
         self.verifications = []
@@ -93,7 +93,7 @@ class LoadTests(unittest.TestCase):
         load.load_data(**self.args)
         for table, vectors in (("documents", self.documents), ("queries", self.queries)):
             with self.subTest(table=table):
-                payload = b"".join(payload for name, payload in self.imports if name == f"dbo.yfcc_1M_{table}")
+                payload = b"".join(payload for name, payload in self.imports if name == f"dbo.yfcc_10M_{table}")
                 record_size = 4 + 2 + 8 + 12
                 self.assertEqual(len(payload), len(vectors) * record_size)
                 for row_id, vector in enumerate(vectors):
@@ -152,6 +152,17 @@ class LoadTests(unittest.TestCase):
                 variables = dict(value.split("=", 1) for value in command[command.index("-v") + 1:])
                 import re
                 self.assertEqual(set(re.findall(r"\$\((\w+)\)", script.read_text())), set(variables))
+
+    def test_setup_guard_uses_database_names_before_creating_tables(self):
+        script = (load.ROOT / "scripts/setup/create-table.sql").read_text(encoding="utf-8")
+        guard = script[script.index("IF DB_NAME()"):script.index("THROW 50000")]
+        self.assertEqual(" ".join(guard.split()),
+                         "IF DB_NAME() <> N'$(ExpectedDatabase)' "
+                         "OR DB_NAME() IN (N'master', N'tempdb', N'model', N'msdb')")
+        self.assertNotIn("DB_ID(", script.upper())
+        self.assertLess(script.index("THROW 50000"), script.index("BEGIN TRANSACTION"))
+        self.assertLess(script.index("THROW 50000"), script.index("CREATE TABLE"))
+        self.run.assert_not_called()
 
     def test_trust_server_certificate_uses_each_tools_switch(self):
         load.load_data(**self.args, trust_server_certificate=True)
@@ -348,14 +359,14 @@ class LoadTests(unittest.TestCase):
     def test_dispatcher_runs_load_script_and_preserves_exit_code(self):
         self.run.side_effect = None
         self.run.return_value = subprocess.CompletedProcess([], 1)
-        self.assertEqual(benchmark.main(["load", "--size", "1M"]), 1)
+        self.assertEqual(benchmark.main(["load", "--size", "10M"]), 1)
         command = self.run.call_args.args[0]
         self.assertEqual(command[0], sys.executable)
         self.assertEqual(Path(command[1]), load.ROOT / "load.py")
-        self.assertEqual(command[2:], ["--size", "1M"])
+        self.assertEqual(command[2:], ["--size", "10M"])
 
     def test_invalid_size_or_chunk_or_batch_size_stops_before_any_output(self):
-        for key, value in (("size", "1M; DROP TABLE x"), ("batch_size", 0), ("batch_size", -1),
+        for key, value in (("size", "1M"), ("size", "1m"), ("size", "10M; DROP TABLE x"), ("batch_size", 0), ("batch_size", -1),
                            ("chunk_rows", 0), ("chunk_rows", -1)):
             with self.subTest(key=key, value=value), self.assertRaises(ValueError):
                 load.load_data(**{**self.args, key: value})

@@ -11,7 +11,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description="Run an MSSQL vector benchmark stage.")
     commands = parser.add_subparsers(dest="command", required=True)
     download_command = commands.add_parser(
-        "download", add_help=False, help="Download a published YFCC dataset size."
+        "download", add_help=False, help="Download a supported YFCC dataset size."
     )
     download_command.set_defaults(handler=download.main)
     commands.add_parser(

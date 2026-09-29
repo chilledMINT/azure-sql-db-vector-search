@@ -148,7 +148,7 @@ def build_index(size, server, database, output_dir, maxdop, expected_engine_vers
                 index_name="yfcc_vector_index", repetition=1, replace_existing=False):
     if (size not in SIZES or not isinstance(maxdop, int) or maxdop < 0
             or not isinstance(repetition, int) or repetition < 1):
-        raise ValueError("Choose a published size, nonnegative MAXDOP, and positive repetition.")
+        raise ValueError("Choose a supported size, nonnegative MAXDOP, and positive repetition.")
     if bool(username) == bool(trusted_connection):
         raise ValueError("Choose a SQL username or a trusted connection, not both.")
     index = quote_identifier(index_name)

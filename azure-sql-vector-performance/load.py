@@ -134,7 +134,7 @@ def write_groundtruth_chunk(neighbors, distances, output, chunk_start, count, de
 def load_data(size, data_dir, server, database, username=None, wsl=None, bcp=None, sqlcmd=None, batch_size=10000,
               trust_server_certificate=False, chunk_rows=100000, trusted_connection=False):
     if size not in SIZES or batch_size < 1 or chunk_rows < 1:
-        raise ValueError("Choose a published size and positive chunk and batch sizes.")
+        raise ValueError("Choose a supported size and positive chunk and batch sizes.")
     if (username and trusted_connection) or (not username and not trusted_connection):
         raise ValueError("Choose either a SQL username or a trusted connection, not both.")
     dataset = Path(data_dir).resolve() / f"yfcc-images-{size}"

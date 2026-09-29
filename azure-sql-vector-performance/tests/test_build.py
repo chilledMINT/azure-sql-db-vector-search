@@ -20,12 +20,12 @@ class BuildTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.directory = Path(self.temporary.name).resolve() / "attempt"
-        self.args = dict(size="1M", server="localhost,1433", database="Vector Test",
+        self.args = dict(size="10M", server="localhost,1433", database="Vector Test",
                          output_dir=self.directory, maxdop=1, trusted_connection=True)
         self.target = dict(database_matches=1, object_id=42, can_select=1, can_alter=1)
         self.column = dict(vector_dimensions=1280, vector_base_type=0, is_nullable=False, is_computed=False)
         self.key = dict(name="id", system_type_id=56, is_nullable=False, type=1, is_disabled=False)
-        self.population = dict(row_count=1000000, nonnull_row_count=1000000, first_id=0, last_id=999999)
+        self.population = dict(row_count=10000000, nonnull_row_count=10000000, first_id=0, last_id=9999999)
         self.existing = dict(object_id=42, index_id=None, is_disabled=False, vector_index_type=None,
                              distance_metric=None, on_embedding=False)
         self.created = dict(object_id=42, index_id=4, is_disabled=False, vector_index_type="DiskANN",
@@ -115,7 +115,7 @@ class BuildTests(unittest.TestCase):
         self.assertFalse(self.driver.pooling)
         self.assertEqual(self.create_count, 1)
         self.assertEqual(result["timing_label"], "server-side CREATE VECTOR INDEX elapsed time")
-        self.assertEqual(result["row_count"], 1000000)
+        self.assertEqual(result["row_count"], 10000000)
         self.assertEqual(result["build_seconds"], 12.5)
         self.assertEqual(result["status"], "succeeded")
         self.assertEqual(result["maxdop"], 1)
@@ -143,7 +143,7 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["run_id"], result["run_id"])
         self.assertEqual(rows[0]["status"], "succeeded")
-        self.assertEqual(rows[0]["row_count"], "1000000")
+        self.assertEqual(rows[0]["row_count"], "10000000")
         self.assertEqual(float(rows[0]["build_seconds"]), 12.5)
         self.assertEqual(rows[0]["create_sql"], result["create_sql"])
         self.assertEqual(json.loads(rows[0]["service_configuration"]), result["service_configuration"])
@@ -172,14 +172,14 @@ class BuildTests(unittest.TestCase):
     def test_invalid_maxdop_authentication_and_index_name_fail_before_output(self):
         for values in ({"maxdop": -1}, {"index_name": "bad]; DROP TABLE x"},
                        {"trusted_connection": False}, {"username": "sql_login"}, {"repetition": 0},
-                       {"expected_engine_version": "latest"}):
+                       {"expected_engine_version": "latest"}, {"size": "1M"}, {"size": "1m"}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 build.build_index(**{**self.args, **values})
         self.driver.connect.assert_not_called()
         self.assertFalse(self.directory.exists())
 
     def test_incomplete_population_does_not_create(self):
-        self.population["row_count"] = 999999
+        self.population["row_count"] = 9999999
         with self.assertRaisesRegex(ValueError, "non-null documents"):
             build.build_index(**self.args)
         self.assertEqual(self.create_count, 0)
@@ -216,7 +216,7 @@ class BuildTests(unittest.TestCase):
         self.assertLess(self.events.index("drop"), self.events.index("create"))
         self.assertEqual(self.create_count, 1)
         drops = [sql for sql, params in self.calls if sql.startswith("DROP INDEX")]
-        self.assertEqual(drops, ["DROP INDEX [yfcc_vector_index] ON [dbo].[yfcc_1M_documents];"])
+        self.assertEqual(drops, ["DROP INDEX [yfcc_vector_index] ON [dbo].[yfcc_10M_documents];"])
 
     def test_changed_index_during_confirmation_is_not_dropped(self):
         self.existing = self.created.copy()
@@ -302,7 +302,7 @@ class BuildTests(unittest.TestCase):
             if "AS database_matches" in sql:
                 self.assertEqual(parameters[0], database)
             if "FROM (SELECT OBJECT_ID" in sql:
-                self.assertEqual(parameters, ("[dbo].[yfcc_1M_documents]", "yfcc_vector_index"))
+                self.assertEqual(parameters, ("[dbo].[yfcc_10M_documents]", "yfcc_vector_index"))
 
     def test_engine_version_is_recorded_without_implicit_pin(self):
         self.metadata["engine_version"] = "18.0.999.0"
@@ -339,10 +339,10 @@ class BuildTests(unittest.TestCase):
 
     def test_dispatcher_routes_build_script_and_exit_code(self):
         with patch.object(benchmark.subprocess, "run", return_value=subprocess.CompletedProcess([], 1)) as run:
-            self.assertEqual(benchmark.main(["build", "--size", "1M", "--maxdop", "0"]), 1)
+            self.assertEqual(benchmark.main(["build", "--size", "10M", "--maxdop", "0"]), 1)
         command = run.call_args.args[0]
         self.assertEqual(Path(command[1]), build.ROOT / "build.py")
-        self.assertEqual(command[2:], ["--size", "1M", "--maxdop", "0"])
+        self.assertEqual(command[2:], ["--size", "10M", "--maxdop", "0"])
 
     def test_export_failure_keeps_completion_checkpoint_and_original_error(self):
         original = build.save_result

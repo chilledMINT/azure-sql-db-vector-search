@@ -348,6 +348,8 @@ def preflight(connection, args, directory):
 
 
 def run_search(args):
+    if args.size not in SIZES:
+        raise ValueError("Choose a supported YFCC Images size: 10M or 100M.")
     if args.maxdop != 1 or not 1 <= args.query_count <= 100000 or args.k < 1 or args.repetitions < 1:
         raise ValueError("Use MAXDOP=1, 1..100000 queries, positive k and repetitions.")
     manifest_path = args.data_dir / f"yfcc-images-{args.size}" / "manifest.json"
