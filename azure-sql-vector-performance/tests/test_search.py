@@ -359,6 +359,55 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(settings["repetitions"], 10)
         self.assertNotIn("username", settings)
 
+    def test_query_count_limit_rejects_before_files_connection_or_workload(self):
+        with patch.object(search, "connect") as connect, patch.object(Path, "read_text") as read, \
+                patch.object(search, "run_repetition") as run:
+            for query_count in (-1, 0, 1001, 100000):
+                with self.subTest(query_count=query_count):
+                    self.args.query_count = query_count
+                    with self.assertRaisesRegex(ValueError, r"1\.\.1000.*ring-buffer"):
+                        search.run_search(self.args)
+                    with self.assertRaises(ValueError):
+                        search.render_workload("10M", 10, query_count, uuid.uuid4())
+            connect.assert_not_called()
+            read.assert_not_called()
+            run.assert_not_called()
+        self.assertFalse(self.args.output_dir.exists())
+
+    def test_query_count_boundaries_are_supported(self):
+        for query_count in (1, 1000):
+            with self.subTest(query_count=query_count):
+                self.args.query_count = query_count
+                self.args.output_dir = self.args.output_dir.parent / f"queries-{query_count}"
+                connection = MagicMock()
+                with patch.object(search, "connect", return_value=connection), \
+                        patch.object(search, "preflight", return_value=({}, [])), \
+                        patch.object(search, "run_repetition", return_value=dict(summary={})) as run, \
+                        redirect_stdout(io.StringIO()):
+                    result = search.run_search(self.args)
+                self.assertEqual(result["status"], "succeeded")
+                self.assertEqual(run.call_count, self.args.repetitions + 1)
+                self.assertTrue(all(call.args[1]["query_count"] == query_count for call in run.call_args_list))
+                self.assertNotIn("__QUERY_COUNT__", search.render_workload("10M", 10, query_count, uuid.uuid4()))
+                connection.close.assert_called_once()
+
+    def test_cli_reports_ring_buffer_limit_without_reading_manifest(self):
+        arguments = ["--size", "10M", "--server", self.args.server, "--database", self.args.database,
+                     "--expected-engine-version", self.args.expected_engine_version, "--trusted-connection",
+                     "--output-dir", str(self.args.output_dir), "--query-count", "100000"]
+        with patch.object(search, "connect") as connect, patch.object(Path, "read_text") as read, \
+                patch.object(search.sys, "stderr", io.StringIO()) as errors:
+            self.assertEqual(search.main(arguments), 1)
+            self.assertIn("1..1000", errors.getvalue())
+            self.assertIn("ring-buffer collector", errors.getvalue())
+            connect.assert_not_called()
+            read.assert_not_called()
+        self.assertFalse(self.args.output_dir.exists())
+        with redirect_stdout(io.StringIO()) as help_output, self.assertRaises(SystemExit) as caught:
+            search.main(["--help"])
+        self.assertEqual(caught.exception.code, 0)
+        self.assertIn("1..1000", help_output.getvalue())
+
     def test_failed_pass_stops_remaining_repetitions_and_retains_attempt(self):
         connection = MagicMock()
         with patch.object(search, "connect", return_value=connection), \

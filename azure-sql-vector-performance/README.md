@@ -71,9 +71,9 @@ Build accepts the pin optionally. A matching version alone does not guarantee
 that every required feature is available.
 
 After the small run succeeds, use `--query-count 1000 --repetitions 10` with a new
-output directory. Larger query counts are accepted by the CLI but can exceed
-ring-buffer capacity; complete collection beyond 1,000 queries has not been
-established. Use a stage's `--help` for additional options.
+output directory. Search accepts 1-1,000 queries per repetition; larger counts
+are rejected before connecting. This is the sample's validated ring-buffer
+collection limit, not a SQL search limit. Use a stage's `--help` for more options.
 
 SQL authentication uses `--username` instead of `--trusted-connection` and hidden
 password prompts. Passwords are not cached. The default 10M load requires about
@@ -204,6 +204,11 @@ A local SQL Server `18.0.251.0` run completed 10M load, build, and search on
 evidence, not an independent exact-GT audit, full-corpus readback, or an Azure SQL
 performance guarantee. No portable performance results are published here. The
 run used a separate parallel-download helper, not the sample's sequential downloader.
+
+A separate 100,000-query collection experiment on the same build completed all
+result rows, but the ring buffer retained only 3,795 events and serialized 1,909
+into truncated XML. The runner rejected the evidence and published no success CSV.
+The 1,000-query cap prevents such unsupported repetitions from starting.
 
 Run offline tests from this sample directory:
 

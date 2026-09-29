@@ -14,6 +14,7 @@ from download import DEFAULT_DATA_DIR, SIZES
 
 ROOT = Path(__file__).resolve().parent
 EVENT_NAMES = ("sql_statement_completed", "sp_statement_completed")
+MAX_QUERY_COUNT = 1000
 QUERY_CSV_FIELDS = (
     "run_id", "repetition", "query_id", "returned", "matched", "ground_truth_count",
     "latency_us", "latency_ms", "recall", "physical_reads", "page_server_reads", "hot", "event_name",
@@ -59,7 +60,7 @@ def write_query_csv(path, rows):
 
 
 def render_workload(size, k, query_count, run_id):
-    if size not in SIZES or not 1 <= k <= SIZES[size] or not 1 <= query_count <= 100000:
+    if size not in SIZES or not 1 <= k <= SIZES[size] or not 1 <= query_count <= MAX_QUERY_COUNT:
         raise ValueError("Invalid dataset, k, or query count.")
     sql = (ROOT / "scripts/vector-search.sql").read_text(encoding="utf-8")
     for token, value in (("SIZE", size), ("K", k), ("QUERY_COUNT", query_count), ("RUN_HEX", run_id.hex)):
@@ -350,8 +351,10 @@ def preflight(connection, args, directory):
 def run_search(args):
     if args.size not in SIZES:
         raise ValueError("Choose a supported YFCC Images size: 10M or 100M.")
-    if args.maxdop != 1 or not 1 <= args.query_count <= 100000 or args.k < 1 or args.repetitions < 1:
-        raise ValueError("Use MAXDOP=1, 1..100000 queries, positive k and repetitions.")
+    if not 1 <= args.query_count <= MAX_QUERY_COUNT:
+        raise ValueError(f"Use 1..{MAX_QUERY_COUNT} queries per repetition with the ring-buffer collector.")
+    if args.maxdop != 1 or args.k < 1 or args.repetitions < 1:
+        raise ValueError("Use MAXDOP=1, positive k and repetitions.")
     manifest_path = args.data_dir / f"yfcc-images-{args.size}" / "manifest.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if (manifest["dataset"] != f"yfcc-images-{args.size}" or manifest["document_count"] != SIZES[args.size]
@@ -409,7 +412,8 @@ def main(argv=None):
     parser.add_argument("--metric", choices=["euclidean"], default="euclidean")
     parser.add_argument("--query-mode", choices=["ann"], default="ann")
     parser.add_argument("--k", type=int, default=10)
-    parser.add_argument("--query-count", type=int, default=1000)
+    parser.add_argument("--query-count", type=int, default=MAX_QUERY_COUNT,
+                        help=f"Queries per repetition (1..{MAX_QUERY_COUNT}; ring-buffer collector limit).")
     parser.add_argument("--repetitions", type=int, default=10)
     parser.add_argument("--maxdop", type=int, choices=[1], default=1)
     authentication = parser.add_mutually_exclusive_group(required=True)
